@@ -16,6 +16,9 @@ _PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 if _PLUGIN_DIR not in _sys.path:
     _sys.path.insert(0, _PLUGIN_DIR)
 import media_loader
+import prompt_optimizer  # v3：提示词优化器（GH prompt_optimizer.py 全功能移植）
+# 优化器路由随模块加载注册一次（GH 同款时机；ComfyUI 加载 custom nodes 时 server 已启动）
+prompt_optimizer.register_prompt_optimizer_routes()
 
 #==================== 0、Autogrow 级联输入辅助（参考 ComfyUI_RH_MinMaxH3 的实现方式）====================
 # 组内输入全部为可选，min=0 表示默认只显示第 1 个输入；
@@ -397,6 +400,35 @@ class H3Ref2v_MediaTaskInput(io.ComfyNode):
             items = []
         return io.NodeOutput(_pack_media_task(items, prompt, duration))
 
+#==================== 11、高级媒体板任务输入（媒体板 + 提示词优化器，直出Tuple包）====================
+class H3Ref2v_AdvancedMediaTaskInput(io.ComfyNode):
+    """与基础媒体板同构 + optimizer_state（优化器设置/缓存随工作流，api_key 除外）。"""
+
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="H3Ref2v_AdvancedMediaTaskInput",
+            display_name="H3｜高级媒体板任务输入(选材直出Tuple包)",
+            category="H3Ref2v/TaskInput",
+            inputs=[
+                io.Int.Input("duration", default=5, min=1, max=60, step=1),
+                io.String.Input("media_list", default="[]", socketless=True),
+                io.String.Input("prompt", default="", multiline=True, optional=True),
+                io.String.Input("optimizer_state", default="{}", socketless=True),
+            ],
+            outputs=[TUPLE_IO.Output(display_name="tuple_item")],
+        )
+
+    @classmethod
+    def execute(cls, duration=5, media_list="[]", prompt="", optimizer_state="{}"):
+        # optimizer_state 仅前端使用（设置/缓存持久化通道），打包与基础版完全一致
+        try:
+            items = json.loads(media_list) if media_list else []
+        except (ValueError, TypeError):
+            logging.warning("[H3MediaBoard] media_list JSON 损坏，按空清单处理")
+            items = []
+        return io.NodeOutput(_pack_media_task(items, prompt, duration))
+
 #====================注册全部节点====================
 NODE_CLASS_MAPPINGS = {
     "H3Ref2v_InputItem":H3Ref2v_InputItem,
@@ -410,6 +442,7 @@ NODE_CLASS_MAPPINGS = {
     "H3Ref2v_CreateEmptyList":H3Ref2v_CreateEmptyList, #新增
     "H3Ref2v_AppendToList":H3Ref2v_AppendToList, #新增
     "H3Ref2v_MediaTaskInput":H3Ref2v_MediaTaskInput, #新增：媒体板
+    "H3Ref2v_AdvancedMediaTaskInput":H3Ref2v_AdvancedMediaTaskInput, #新增：高级媒体板
 }
 NODE_DISPLAY_NAME_MAPPINGS={
     "H3Ref2v_InputItem":"H3｜单段任务输入(分散输出)",
@@ -423,4 +456,5 @@ NODE_DISPLAY_NAME_MAPPINGS={
     "H3Ref2v_CreateEmptyList":"H3｜创建空List",#新增
     "H3Ref2v_AppendToList":"H3｜追加List元素",#新增
     "H3Ref2v_MediaTaskInput":"H3｜媒体板任务输入(选材直出Tuple包)",#新增：媒体板
+    "H3Ref2v_AdvancedMediaTaskInput":"H3｜高级媒体板任务输入(选材直出Tuple包)",#新增：高级媒体板
 }

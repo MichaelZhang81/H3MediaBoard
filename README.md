@@ -26,3 +26,9 @@ Restart ComfyUI.
 - H3｜追加List元素
 - H3｜媒体板任务输入(选材直出Tuple包)
 - H3｜高级媒体板任务输入(选材直出Tuple包)
+
+## 特色
+
+只需要关注输入物料即可，无限嵌套生成无限时长视频。
+
+<img width="1096" height="1146" alt="image" src="https://github.com/user-attachments/assets/ddaff9e4-ef13-4a4d-ab7e-0ff128b404df" />

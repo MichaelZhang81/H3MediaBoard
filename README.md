@@ -25,3 +25,4 @@ Restart ComfyUI.
 - H3｜创建空List
 - H3｜追加List元素
 - H3｜媒体板任务输入(选材直出Tuple包)
+- H3｜高级媒体板任务输入(选材直出Tuple包)

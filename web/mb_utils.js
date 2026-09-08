@@ -19,6 +19,28 @@ export function mbSlots(items) {
 }
 
 /**
+ * 按标签引用从素材清单中收集被引用素材：tags=[{kind,n}]（mbParsePromptTags 输出，
+ * 已去重），对照 items 同类按出现顺序计数（与媒体板角标一致），取第 n 个同 kind
+ * 素材；n 超出该 kind 总数或 kind 非法则跳过；tags 重复（Set 兜底）只收集一次。
+ * 返回 [{kind, n, path, name}]（保持 items 顺序；n 为同 kind 角标 = 被引用标签号，
+ * 供优化器 label "picture n" 与后端按标签号过滤匹配）。
+ */
+export function mbCollectRefs(items, tags) {
+  const valid = new Set((tags || []).map((t) => t.kind + ":" + t.n));
+  const counts = { image: 0, video: 0, audio: 0 };
+  const out = [];
+  for (const it of items || []) {
+    if (!it || typeof it.kind !== "string" || !valid.has(it.kind + ":" + (counts[it.kind] + 1))) {
+      if (it && typeof it.kind === "string") counts[it.kind] = (counts[it.kind] || 0) + 1;
+      continue;
+    }
+    counts[it.kind] = (counts[it.kind] || 0) + 1;
+    out.push({ kind: it.kind, n: counts[it.kind], path: it.path, name: it.name });
+  }
+  return out;
+}
+
+/**
  * mm:ss 格式化。负数 / 非有限值 -> "--:--"；秒向下取整。
  */
 export function mbFmtTime(t) {
@@ -109,4 +131,54 @@ export function mbDetectKind(name) {
   if (VIDEO_EXTS.includes(ext)) return "video";
   if (AUDIO_EXTS.includes(ext)) return "audio";
   return null;
+}
+
+const TAG_RE = /<(\s*)(picture|video|audio)\s+(\d{1,2})\s*>/gi;
+
+/**
+ * 解析提示词中的素材标签 <Picture n>/<Video n>/<Audio n>（大小写与空白宽容），
+ * 返回按首次出现顺序去重的 [{kind, n}]；n 超出 1..32 视为非法（忽略）。
+ * 供优化器 payload 收集（按标签引用）与任务判定复用。
+ */
+export function mbParsePromptTags(text) {
+  if (typeof text !== "string" || !text) return [];
+  const seen = new Set();
+  const out = [];
+  const kindOf = { picture: "image", video: "video", audio: "audio" };
+  for (const m of text.matchAll(TAG_RE)) {
+    const kind = kindOf[m[2].toLowerCase()];
+    const n = Number(m[3]);
+    if (!kind || n < 1 || n > 32) continue;
+    const key = kind + ":" + n;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ kind, n });
+  }
+  return out;
+}
+
+const PROMPT_TAG_GLOBAL_RE = /<(\s*)(picture|video|audio)\s+(\d{1,2})\s*>/gi;
+
+/**
+ * 把提示词文本分段为 [{type:"text"|"tag"}] 序列，供富文本编辑器渲染 chip：
+ * 合法标签（n 1..32）独立成 tag 段（含 kind 与 n），其余全部并入 text 段
+ * （顺序拼接所有段等于原文）。大小写与空白宽容（与 mbParsePromptTags 同规则）。
+ */
+export function mbSplitPromptSegments(text) {
+  if (typeof text !== "string" || !text) return [];
+  const out = [];
+  let cursor = 0;
+  const kindOf = { picture: "image", video: "video", audio: "audio" };
+  for (const m of text.matchAll(PROMPT_TAG_GLOBAL_RE)) {
+    const kind = kindOf[m[2].toLowerCase()];
+    const n = Number(m[3]);
+    if (!kind || n < 1 || n > 32) continue; // 非法标签整体留在文本段
+    const start = m.index;
+    const raw = m[0];
+    if (start > cursor) out.push({ type: "text", text: text.slice(cursor, start) });
+    out.push({ type: "tag", kind, n, raw });
+    cursor = start + raw.length;
+  }
+  if (cursor < text.length) out.push({ type: "text", text: text.slice(cursor) });
+  return out;
 }

@@ -28,6 +28,9 @@ const KIND_LIMIT = { image: "maxImage", video: "maxVideo", audio: "maxAudio" };
 const ACCEPT_ALL = "image/*,video/*,audio/*";
 const ACCEPT_OF = { image: "image/*", video: "video/*", audio: "audio/*" };
 
+// 媒体板同时服务基础版与高级版节点（行为完全一致，优化 UI 只挂高级版）
+const MB_NODES = ["H3Ref2v_MediaTaskInput", "H3Ref2v_AdvancedMediaTaskInput"];
+
 function mbWidget(node, name) {
   return node.widgets?.find((w) => w.name === name);
 }
@@ -88,6 +91,9 @@ function mbNodePanel(node) {
 }
 
 function mbPromptTextarea(node) {
+  // v3.1：高级节点的富文本编辑器（prompt_optimizer_ui.js 提供，textarea 接口多态）
+  const editor = node.__mbEditor?.element;
+  if (editor?.isConnected) return editor;
   // 1.49.6 主路径：面板内 textarea 优先；widget 自带 textarea（孤儿节点）
   // 仅在已挂载（老前端渲染路径）时兜底。
   const panel = mbNodePanel(node)?.querySelector("textarea");
@@ -121,7 +127,8 @@ function mbWirePointer(node, card, idx) {
   let wasFocused = false;
 
   card.addEventListener("pointerdown", (e) => {
-    if (e.target.closest(".mb-remove")) return;
+    // × 与播放按钮豁免插入：v3 验收后播放点击不再触发插入标签
+    if (e.target.closest(".mb-remove") || e.target.closest(".mb-play")) return;
     if (e.button !== 0) return;
     wasFocused = !!ta && document.activeElement === ta;
     startX = e.clientX;
@@ -480,6 +487,8 @@ function mbRender(node) {
   s.items.forEach((it, idx) => s.listEl.appendChild(mbCard(node, it, idx)));
   s.listEl.appendChild(s.placeholderEl);
   mbRefreshError(node);
+  // v3.1：素材变更（增删/替换/拖拽）后让高级节点编辑器刷新 chip 缩略图与角标
+  node.__mbEditor?.refreshChips?.();
   mbResize(node);
 }
 
@@ -574,7 +583,7 @@ function mbInjectCss() {
 app.registerExtension({
   name: "H3MediaBoard",
   async beforeRegisterNodeDef(nodeType, nodeData, app) {
-    if (nodeData.name !== "H3Ref2v_MediaTaskInput") return;
+    if (!MB_NODES.includes(nodeData.name)) return;
 
     const onNodeCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function () {
